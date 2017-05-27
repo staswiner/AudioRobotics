@@ -49,10 +49,11 @@ namespace winformsAudio
 			}
 			while (Last10.Count < 10)
 				Last10.Add(0);
+            int DeviceNumber = 0;
 			sourceStream = new NAudio.Wave.WaveIn();
-            sourceStream.DeviceNumber = 0;
-            sourceStream.WaveFormat = new NAudio.Wave.WaveFormat(44100, NAudio.Wave.WaveIn.GetCapabilities(0).Channels);
-			sourceStream.BufferMilliseconds = 1000;
+            sourceStream.DeviceNumber = DeviceNumber;
+            sourceStream.WaveFormat = new NAudio.Wave.WaveFormat(44100, NAudio.Wave.WaveIn.GetCapabilities(DeviceNumber).Channels);
+			sourceStream.BufferMilliseconds = 100;
 
 			WaveFormat test = sourceStream.WaveFormat;
 			waveIn = new NAudio.Wave.WaveInProvider(sourceStream);
@@ -69,7 +70,7 @@ namespace winformsAudio
 		List<float> Last10 = new List<float>(10);
 		public byte[] CurrentBuffer = null;
 		public byte[] CurrentFloatBuffer = null;
-		const int VolumeThreshHold = 500;
+		int VolumeThreshHold = 4000;
 		private Int16 GetSampleValue(byte[] buffer, int index)
 		{
 			byte sound1 = buffer[index + 0];
@@ -89,7 +90,13 @@ namespace winformsAudio
 			// for drawing
 			CurrentBuffer = e.Buffer;
 			this.pictureBox1.Invalidate();
-			for(int i = 0; i < sample - 3; i+=2)
+            for (int i = 0; i < sample - 3; i += 2)
+            {
+                Int16 value = GetSampleValue(e.Buffer, i);
+                if (value > max) max = value;
+            }
+            VolumeThreshHold = (int)(max * 0.8);
+            for (int i = 0; i < sample - 3; i+=2)
 			{
 				Int16 value = GetSampleValue(e.Buffer,i);
 				if (value > VolumeThreshHold && !!WentNegative)
@@ -110,9 +117,9 @@ namespace winformsAudio
 
 			Average = 0;
 			int Low = 0;
-			
-			
 
+
+            InPositive *= 10;
 			textBox1.Text = InPositive.ToString();
 			//textBox1.Text = Average.ToString();
 
@@ -208,7 +215,7 @@ namespace winformsAudio
 				{
 
 					Int16 value = GetSampleValue(CurrentBuffer, i);
-					float ScaleFactor = 1.0f / 100.0f;
+					float ScaleFactor = 1.0f / 800.0f;
 					e.Graphics.FillRectangle(brushRed, x + (i / 2), 100.0f, 1, 1);
 					e.Graphics.FillRectangle(brushBlue, x + (i / 2), VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
 					e.Graphics.FillRectangle(brushBlue, x + (i / 2), -VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
