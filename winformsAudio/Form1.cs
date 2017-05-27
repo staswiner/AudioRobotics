@@ -53,7 +53,7 @@ namespace winformsAudio
 			sourceStream = new NAudio.Wave.WaveIn();
             sourceStream.DeviceNumber = DeviceNumber;
             sourceStream.WaveFormat = new NAudio.Wave.WaveFormat(44100, NAudio.Wave.WaveIn.GetCapabilities(DeviceNumber).Channels);
-			sourceStream.BufferMilliseconds = 100;
+			sourceStream.BufferMilliseconds = 200;
 
 			WaveFormat test = sourceStream.WaveFormat;
 			waveIn = new NAudio.Wave.WaveInProvider(sourceStream);
