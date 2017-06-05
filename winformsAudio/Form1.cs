@@ -18,7 +18,7 @@ namespace winformsAudio
             InitializeComponent();
 			NXT.Open("COM5");
 
-        }
+		}
 		~Form1()
 		{
 			NXT.close();
@@ -288,11 +288,15 @@ namespace winformsAudio
 			var key = e.KeyCode;
 			if (key == Keys.Right)
 			{
-				NXT.SetMotor(1, 100, Bluetooth.Motor.eState.On);
+				NXT.SetMotor(0, 100, Bluetooth.Motor.eState.On);
 			}
 			if (key == Keys.Left)
 			{
-				NXT.SetMotor(1, -100, Bluetooth.Motor.eState.On);
+				NXT.SetMotor(0, -100, Bluetooth.Motor.eState.On);
+			}
+			if (key == Keys.Space)
+			{
+				NXT.SetMotor(0, 0, Bluetooth.Motor.eState.Off);
 			}
 		}
 

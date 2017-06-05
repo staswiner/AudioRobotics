@@ -18,17 +18,24 @@ namespace winformsAudio
 			int i;
 			long res;
 
-			serialPort.Write(message.ToArray(),0, message.Count);
-			return 0;
+			try
+			{
+				serialPort.Write(message.ToArray(), 0, message.Count);
+			}
+			catch(Exception e)
+			{
+				Console.Write(e.ToString());
+			}
+				return 0;
 		}
-		public int receive(ref string rcbuf, long length)
+		public int receive(ref List<byte> rcbuf)
 		{
 			const int size = 1024;
 			byte[] buffer = new byte[size];
-			serialPort.Read(buffer, 0, size);
+			int numBytesRead = serialPort.Read(buffer, 0, size);
 			string output = Convert.ToString(buffer);
-			rcbuf = output;
-			return 35;
+			rcbuf = new List<byte>(buffer);
+			return numBytesRead;
 		}
 		public int close()
 		{
@@ -49,7 +56,6 @@ namespace winformsAudio
 			bytes.Add(0);
 			bytes.Add(0x01);
 			bytes.Add(0x9B);
-			bytes.Add(0);
 			int res = send(bytes);
 			//if (res == 0)
 			//{
@@ -57,14 +63,14 @@ namespace winformsAudio
 			//	return (0);
 			//}
 			System.Threading.Thread.Sleep(500); //wait 100ms
-			string message = "";
-			res = receive(ref message, 33 + 2);
-			bytes = new List<byte>(Encoding.ASCII.GetBytes(message));
-			//if ((res != 35) || (bytes[2] != 0x02) || (bytes[3] != 0x9b) || (bytes[4] != 0x00))
-			//{ //correct response?
-			//	close();
-			//	return (0);
-			//}
+			List<byte> message = null;
+			res = receive(ref message);
+			bytes = message;
+			if ((res != 35) || (bytes[2] != 0x02) || (bytes[3] != 0x9b) || (bytes[4] != 0x00))
+			{ //correct response?
+				close();
+				return (0);
+			}
 
 			//store device info
 
@@ -133,8 +139,7 @@ namespace winformsAudio
 			bytes.Add((byte)((tacholimit >> 8) & 0xff));
 			bytes.Add((byte)((tacholimit >> 16) & 0xff));
 			bytes.Add((byte)(tacholimit >> 24));
-			bytes.Add(0);
-			res = this.send(bytes);
+			res = this.send(bytes); // 12,0,128,4,1,100,5,1,0,32,0,0,0,0
 			//if (res == 0) return (0);
 
 			/*res=NXT_receive(mess,3+2);
