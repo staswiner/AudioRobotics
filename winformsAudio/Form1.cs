@@ -16,7 +16,13 @@ namespace winformsAudio
         public Form1()
         {
             InitializeComponent();
+			NXT.Open("COM5");
+
         }
+		~Form1()
+		{
+			NXT.close();
+		}
 
         private void button1_Click(object sender, EventArgs e)
         {
@@ -53,7 +59,7 @@ namespace winformsAudio
 			sourceStream = new NAudio.Wave.WaveIn();
             sourceStream.DeviceNumber = DeviceNumber;
             sourceStream.WaveFormat = new NAudio.Wave.WaveFormat(44100, NAudio.Wave.WaveIn.GetCapabilities(DeviceNumber).Channels);
-			sourceStream.BufferMilliseconds = 200;
+			sourceStream.BufferMilliseconds = 100;
 
 			WaveFormat test = sourceStream.WaveFormat;
 			waveIn = new NAudio.Wave.WaveInProvider(sourceStream);
@@ -87,19 +93,31 @@ namespace winformsAudio
 			float max = 0;
 			float InPositive = 0;
 			bool WentNegative = true;
+            CurrentBuffer = new byte[sample];
 			// for drawing
-			CurrentBuffer = e.Buffer;
-			this.pictureBox1.Invalidate();
             for (int i = 0; i < sample - 3; i += 2)
             {
                 Int16 value = GetSampleValue(e.Buffer, i);
                 if (value > max) max = value;
             }
-            VolumeThreshHold = (int)(max * 0.8);
+            VolumeThreshHold = (int)(max * 0.1f);
+            VolumeThreshHold = 200;
             for (int i = 0; i < sample - 3; i+=2)
 			{
 				Int16 value = GetSampleValue(e.Buffer,i);
-				if (value > VolumeThreshHold && !!WentNegative)
+                if (value == max)
+                {
+                    value = value;
+                }
+                double PowerFactor = 1.0f;
+                double FilteredValue = (double)Math.Pow((double)value, PowerFactor);
+                FilteredValue /= (double)Math.Pow((double)max, PowerFactor-1.0f);
+                value = (Int16)FilteredValue;
+                //if (value < 0)
+                //{
+                //    value *= -1;
+                //}
+                if (value > VolumeThreshHold && WentNegative)
 				{
 					InPositive++;
 					WentNegative = false;
@@ -108,14 +126,23 @@ namespace winformsAudio
 				{
 					WentNegative = true;
 				}
-			}
+                if (value < 0)
+                {
+                    value = value;
+                }
+                byte[] newValues = BitConverter.GetBytes(value);
+                CurrentBuffer[i + 0] = newValues[1];
+                CurrentBuffer[i + 1] = newValues[0];
+            }
 
+           
+            this.pictureBox1.Invalidate();
 
-			//totalData /= sample;
-			//totalData = 10000.0f / totalData;
-		//	InPositive *= 10.0f; //100ms, duplicate data for speakers
+            //totalData /= sample;
+            //totalData = 10000.0f / totalData;
+            //	InPositive *= 10.0f; //100ms, duplicate data for speakers
 
-			Average = 0;
+            Average = 0;
 			int Low = 0;
 
 
@@ -208,14 +235,29 @@ namespace winformsAudio
 			Brush brushBlue = new SolidBrush(Color.Blue);
 			int x = 0;
 			int y = 0;
+					float ScaleFactor = 1.0f / 100.0f;
 			if (CurrentBuffer != null)
 			{
+                Point currentDot;
+                Point previousDot;
 				e.Graphics.Clear(Color.White);
-				for (int i = 0; i < CurrentBuffer.Length - 3; i += 2)
+                previousDot = new Point();
+                Int16 value = (Int16)(GetSampleValue(CurrentBuffer, 0) * -1);
+                previousDot.Y = (int)((float)value * ScaleFactor + 100.0f);
+                previousDot.X = 0;
+                for (int i = 1; i < CurrentBuffer.Length - 3; i += 2)
 				{
 
-					Int16 value = GetSampleValue(CurrentBuffer, i);
-					float ScaleFactor = 1.0f / 800.0f;
+					value = (Int16)(GetSampleValue(CurrentBuffer, i));
+                    if (value > 0)
+                        value = value;
+                    value *= -1;
+                    currentDot = new Point();
+                    currentDot.Y = (int)((float)value * ScaleFactor + 100.0f);
+                    currentDot.X = (i/2);
+
+                  //  e.Graphics.DrawLine(pen, currentDot, previousDot);
+                    previousDot = currentDot;
 					e.Graphics.FillRectangle(brushRed, x + (i / 2), 100.0f, 1, 1);
 					e.Graphics.FillRectangle(brushBlue, x + (i / 2), VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
 					e.Graphics.FillRectangle(brushBlue, x + (i / 2), -VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
@@ -240,6 +282,32 @@ namespace winformsAudio
 				}
 			}
 			}
+		Bluetooth NXT = new Bluetooth();
+		private void Form1_KeyDown(object sender, KeyEventArgs e)
+		{
+			var key = e.KeyCode;
+			if (key == Keys.Right)
+			{
+				NXT.SetMotor(1, 100, Bluetooth.Motor.eState.On);
+			}
+			if (key == Keys.Left)
+			{
+				NXT.SetMotor(1, -100, Bluetooth.Motor.eState.On);
+			}
+		}
 
+		private void Form1_KeyUp(object sender, KeyEventArgs e)
+		{
+			var key = e.KeyCode;
+			if (key == Keys.Right || key == Keys.Left)
+			{
+				NXT.SetMotor(1, 0, Bluetooth.Motor.eState.On);
+			}
+		}
+
+		private void Form1_KeyPress(object sender, KeyPressEventArgs e)
+		{
+
+		}
 	}
 }
