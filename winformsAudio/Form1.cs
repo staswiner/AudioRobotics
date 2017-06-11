@@ -85,6 +85,32 @@ namespace winformsAudio
 			Int16 value = BitConverter.ToInt16(sound, 0);
 			return value;
 		}
+		private void ProceedData(byte[] Data, int Count)
+		{
+			// <value of Amplitude>
+			List<Int16> Amplitudes = new List<Int16>();
+			// <value of differential>
+			List<Int16> Differentials = new List<short>();
+			// <index, Extremum (amplitute)>
+			var Extremums = new Dictionary<int,Int16>();
+			for (var i = 0; i < Count - 5; i += 2)
+			{
+				Int16 value1 = GetSampleValue(Data, i);
+				Int16 value2 = GetSampleValue(Data, i+2);
+				Differentials.Add((short)(value2-value1));
+				Amplitudes.Add(value1);
+			}
+			for(var i = 0; i < Count - 5; i++)
+			{
+				if (Differentials[i] * Differentials[i+1] < 0) // changed from neg to pos or pos to neg
+				{
+					Extremums[i] = Amplitudes[i];
+				}
+			}
+			//
+
+
+		}
         private void sourceStream_DataAvailable(object sender, NAudio.Wave.WaveInEventArgs e)
         {
 			int sample = e.BytesRecorded;
@@ -93,6 +119,7 @@ namespace winformsAudio
 			float max = 0;
 			float InPositive = 0;
 			bool WentNegative = true;
+			bool isOdd = true;
             CurrentBuffer = new byte[sample];
 			// for drawing
             for (int i = 0; i < sample - 3; i += 2)
@@ -105,35 +132,32 @@ namespace winformsAudio
             for (int i = 0; i < sample - 3; i+=2)
 			{
 				Int16 value = GetSampleValue(e.Buffer,i);
-                if (value == max)
-                {
-                    value = value;
-                }
-                double PowerFactor = 1.0f;
-                double FilteredValue = (double)Math.Pow((double)value, PowerFactor);
-                FilteredValue /= (double)Math.Pow((double)max, PowerFactor-1.0f);
-                value = (Int16)FilteredValue;
-                //if (value < 0)
-                //{
-                //    value *= -1;
-                //}
-                if (value > VolumeThreshHold && WentNegative)
+				if (isOdd)
 				{
-					InPositive++;
-					WentNegative = false;
+					value *= -1;
+					isOdd = false;
 				}
-				if (value < -VolumeThreshHold && !!WentNegative == false)
+				else
 				{
-					WentNegative = true;
+					isOdd = true;
 				}
-                if (value < 0)
-                {
-                    value = value;
-                }
+           
+
+    //            if (value > VolumeThreshHold && WentNegative)
+				//{
+				//	InPositive++;
+				//	WentNegative = false;
+				//}
+				//if (value < -VolumeThreshHold && !!WentNegative == false)
+				//{
+				//	WentNegative = true;
+				//}
                 byte[] newValues = BitConverter.GetBytes(value);
                 CurrentBuffer[i + 0] = newValues[1];
                 CurrentBuffer[i + 1] = newValues[0];
-            }
+
+			}
+			ProceedData(CurrentBuffer, sample);
 
            
             this.pictureBox1.Invalidate();
@@ -235,7 +259,7 @@ namespace winformsAudio
 			Brush brushBlue = new SolidBrush(Color.Blue);
 			int x = 0;
 			int y = 0;
-					float ScaleFactor = 1.0f / 100.0f;
+					float ScaleFactor = 1.0f / 20.0f;
 			if (CurrentBuffer != null)
 			{
                 Point currentDot;
