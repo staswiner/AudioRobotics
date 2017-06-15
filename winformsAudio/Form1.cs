@@ -11,43 +11,43 @@ using NAudio.Wave;
 
 namespace winformsAudio
 {
-    public partial class Form1 : Form
-    {
-        public Form1()
-        {
-            InitializeComponent();
-			NXT.Open("COM5");
+	public partial class Form1 : Form
+	{
+		public Form1()
+		{
+			InitializeComponent();
+			//	NXT.Open("COM5");
 
 		}
 		~Form1()
 		{
-			NXT.close();
+			//	NXT.close();
 		}
 
-        private void button1_Click(object sender, EventArgs e)
-        {
-            List<NAudio.Wave.WaveInCapabilities> sources = new List<NAudio.Wave.WaveInCapabilities>();
-            for(int i = 0; i < NAudio.Wave.WaveIn.DeviceCount; i++)
-            {
-                sources.Add(NAudio.Wave.WaveIn.GetCapabilities(i));
-            }
+		private void button1_Click(object sender, EventArgs e)
+		{
+			List<NAudio.Wave.WaveInCapabilities> sources = new List<NAudio.Wave.WaveInCapabilities>();
+			for (int i = 0; i < NAudio.Wave.WaveIn.DeviceCount; i++)
+			{
+				sources.Add(NAudio.Wave.WaveIn.GetCapabilities(i));
+			}
 
-            listBox1.Items.Clear();
-            foreach( var source in sources)
-            {
-                ListViewItem item = new ListViewItem(source.ProductName);
-                this.listBox1.Items.Add(item);
-            }
-        }
+			listBox1.Items.Clear();
+			foreach (var source in sources)
+			{
+				ListViewItem item = new ListViewItem(source.ProductName);
+				this.listBox1.Items.Add(item);
+			}
+		}
 
-        private NAudio.Wave.WaveIn sourceStream = null;
-        private NAudio.Wave.DirectSoundOut waveOut = null;
-        private NAudio.Wave.WaveFileWriter waveWriter = null;
-        NAudio.Wave.WaveInProvider waveIn = null;
+		private NAudio.Wave.WaveIn sourceStream = null;
+		private NAudio.Wave.DirectSoundOut waveOut = null;
+		private NAudio.Wave.WaveFileWriter waveWriter = null;
+		NAudio.Wave.WaveInProvider waveIn = null;
 		WaveChannel32 wave = null;
 
 		private void button2_Click(object sender, EventArgs e)
-        {
+		{
 			if (wave != null)
 			{
 				wave.Dispose();
@@ -55,27 +55,31 @@ namespace winformsAudio
 			}
 			while (Last10.Count < 10)
 				Last10.Add(0);
-            int DeviceNumber = 0;
+			int DeviceNumber = 0;
 			sourceStream = new NAudio.Wave.WaveIn();
-            sourceStream.DeviceNumber = DeviceNumber;
-            sourceStream.WaveFormat = new NAudio.Wave.WaveFormat(44100, NAudio.Wave.WaveIn.GetCapabilities(DeviceNumber).Channels);
+			sourceStream.DeviceNumber = DeviceNumber;
+			sourceStream.WaveFormat = new NAudio.Wave.WaveFormat(44100, NAudio.Wave.WaveIn.GetCapabilities(DeviceNumber).Channels);
 			sourceStream.BufferMilliseconds = 100;
 
 			WaveFormat test = sourceStream.WaveFormat;
 			waveIn = new NAudio.Wave.WaveInProvider(sourceStream);
 
-            waveOut = new NAudio.Wave.DirectSoundOut();
-            waveOut.Init(waveIn);
-            sourceStream.DataAvailable += new EventHandler<NAudio.Wave.WaveInEventArgs>(sourceStream_DataAvailable);
-            waveWriter = new NAudio.Wave.WaveFileWriter("Violin.wav", sourceStream.WaveFormat);
+			waveOut = new NAudio.Wave.DirectSoundOut();
+			waveOut.Init(waveIn);
+			sourceStream.DataAvailable += new EventHandler<NAudio.Wave.WaveInEventArgs>(sourceStream_DataAvailable);
+			waveWriter = new NAudio.Wave.WaveFileWriter("Violin.wav", sourceStream.WaveFormat);
 
-            sourceStream.StartRecording();
-            waveOut.Stop();
-        }
+			sourceStream.StartRecording();
+			waveOut.Stop();
+		}
 		float Average = 0;
 		List<float> Last10 = new List<float>(10);
 		public byte[] CurrentBuffer = null;
 		public byte[] CurrentFloatBuffer = null;
+		public List<Int16> SingleWave = null; // 1 cycle
+		public List<Int16> FrameWave = null; // 100ms
+		public List<Int16> DifferentialsWave = null; // Differentials
+		public Dictionary<int,Int16> ExtremumsWave = null; // Extremums
 		int VolumeThreshHold = 4000;
 		private Int16 GetSampleValue(byte[] buffer, int index)
 		{
@@ -85,34 +89,135 @@ namespace winformsAudio
 			Int16 value = BitConverter.ToInt16(sound, 0);
 			return value;
 		}
+		private int SFT(byte[] Data, int Count) // stas fürer transform
+		{
+			int StartTime = DateTime.Now.Millisecond;
+			int MirrorSize = Count / 16;
+			// <value of Amplitude>
+			List<Int16> Amplitudes = new List<Int16>();
+			for (var i = 0; i < Count - 3; i += 2)
+			{
+				Int16 value1 = GetSampleValue(Data, i);
+				Amplitudes.Add(value1);
+			}
+			FrameWave = new List<short>(Amplitudes);
+			// <Key: Frequency, Value : Amplitude>
+			Dictionary<int,int> FrequencyContainer = new Dictionary<int, int>(); 
+			for (int Frequency = 440; Frequency > 260; Frequency -= 10)
+			{
+				FrequencyContainer[Frequency] = 0;
+				bool Checked = true;
+				const int AmplituteIncrement = 1;
+				while (Checked)
+				{
+					for (float i = 0; i < ((float)MirrorSize / (float)Frequency); i+=1.0f/(Frequency*2.0f))
+					{
+						float SinusFunctionValue = 
+							(System.Math.Abs(FrequencyContainer[Frequency] + AmplituteIncrement))
+							* (float)System.Math.Sin((double)(i) * System.Math.PI * Frequency);
+						if (System.Math.Abs(Amplitudes[(int)i*100]) < 
+							System.Math.Abs(SinusFunctionValue))
+						{
+							Checked = false;
+							break;
+						}
+
+					}
+					if (Checked == true)
+						FrequencyContainer[Frequency] += AmplituteIncrement;
+				}
+			}
+			int max = 0;
+			int ReturnFrequency = 0;
+			foreach(var i in FrequencyContainer)
+			{
+				if (i.Value > max)
+				{
+					max = i.Value;
+					ReturnFrequency = i.Key;
+				}
+			}
+			int EndTime = DateTime.Now.Millisecond;
+			int TotalTime = EndTime - StartTime;
+			return ReturnFrequency;
+		}
 		private void ProceedData(byte[] Data, int Count)
 		{
 			// <value of Amplitude>
 			List<Int16> Amplitudes = new List<Int16>();
 			// <value of differential>
-			List<Int16> Differentials = new List<short>();
+			List<Int16> Differentials = new List<Int16>();
 			// <index, Extremum (amplitute)>
-			var Extremums = new Dictionary<int,Int16>();
-			for (var i = 0; i < Count - 5; i += 2)
+			var Extremums = new Dictionary<int, Int16>();
+			// Sum
+			int IntegralSum = 0;
+
+			for (var i = 0; i < Count - 200; i += 2)
 			{
 				Int16 value1 = GetSampleValue(Data, i);
-				Int16 value2 = GetSampleValue(Data, i+2);
-				Differentials.Add((short)(value2-value1));
+				Int16 value2 = GetSampleValue(Data, i + 2);
+				Int16 value3Far = GetSampleValue(Data, i + 20);
+				Differentials.Add((short)(value3Far - value1));
 				Amplitudes.Add(value1);
+				IntegralSum += value1;
 			}
-			for(var i = 0; i < Count - 5; i++)
+			textBox2.Text = IntegralSum.ToString();
+			FrameWave = new List<short>(Amplitudes);
+			for (var i = 0; i < Count/2 - 200; i++)
 			{
-				if (Differentials[i] * Differentials[i+1] < 0) // changed from neg to pos or pos to neg
+				if (Differentials[i] * Differentials[i + 1] < 0) // changed from neg to pos or pos to neg
 				{
 					Extremums[i] = Amplitudes[i];
 				}
 			}
 			//
+			int MatchIndex = 0;
+			int MaxMatch = 1;
+			Dictionary<int, Int16> CurrentContainer = new Dictionary<int, Int16>();
+			Dictionary<int, Int16> LastContainer = new Dictionary<int, Int16>();
+		
+			for (int n = 0; Extremums.Count > 1; n++)
+			{
+				CurrentContainer.Clear();
+				MatchIndex = 0;
+				MaxMatch = 1;
+				CurrentContainer[Extremums.ElementAt(0).Key] = Extremums.ElementAt(0).Value;
+				for (int i = 1; i < Extremums.Count; i++)
+				{
+					if (Math.IsEqual(
+						Extremums.ElementAt(i).Value,
+						Extremums.ElementAt(MatchIndex).Value).To_Extent(50.0f) &&
+						i > MatchIndex + 2)
+					{
+						if (MatchIndex == MaxMatch)
+						{
+							CurrentContainer[Extremums.ElementAt(i).Key] = Extremums.ElementAt(i).Value;
+							MaxMatch++;
+						}
+						MatchIndex++;
+					}
+					else
+					{
+						MatchIndex = 0;
+					}
+				}
+				LastContainer = new Dictionary<int, short>(Extremums);
+				Extremums = new Dictionary<int, short>(CurrentContainer);
+			}
+			/**/
 
+			SingleWave = new List<short>();
+			for(int i = 0; i < LastContainer.ElementAt(LastContainer.Count - 1).Key; i++)
+			{
+				SingleWave.Add(Amplitudes[i]);
+			}
 
+			DifferentialsWave = new List<short>(Differentials);
+			ExtremumsWave = new Dictionary<int, short>(Extremums);
+		
 		}
-        private void sourceStream_DataAvailable(object sender, NAudio.Wave.WaveInEventArgs e)
-        {
+		private void sourceStream_DataAvailable(object sender, NAudio.Wave.WaveInEventArgs e)
+		{
 			int sample = e.BytesRecorded;
 			/* analyze data */
 			float totalData = 0;
@@ -120,18 +225,18 @@ namespace winformsAudio
 			float InPositive = 0;
 			bool WentNegative = true;
 			bool isOdd = true;
-            CurrentBuffer = new byte[sample];
+			CurrentBuffer = new byte[sample];
 			// for drawing
-            for (int i = 0; i < sample - 3; i += 2)
-            {
-                Int16 value = GetSampleValue(e.Buffer, i);
-                if (value > max) max = value;
-            }
-            VolumeThreshHold = (int)(max * 0.1f);
-            VolumeThreshHold = 200;
-            for (int i = 0; i < sample - 3; i+=2)
+			for (int i = 0; i < sample - 3; i += 2)
 			{
-				Int16 value = GetSampleValue(e.Buffer,i);
+				Int16 value = GetSampleValue(e.Buffer, i);
+				if (value > max) max = value;
+			}
+			VolumeThreshHold = (int)(max * 0.1f);
+			VolumeThreshHold = 200;
+			for (int i = 0; i < sample - 3; i += 2)
+			{
+				Int16 value = GetSampleValue(e.Buffer, i);
 				if (isOdd)
 				{
 					value *= -1;
@@ -141,53 +246,56 @@ namespace winformsAudio
 				{
 					isOdd = true;
 				}
-           
 
-    //            if (value > VolumeThreshHold && WentNegative)
-				//{
-				//	InPositive++;
-				//	WentNegative = false;
-				//}
-				//if (value < -VolumeThreshHold && !!WentNegative == false)
-				//{
-				//	WentNegative = true;
-				//}
-                byte[] newValues = BitConverter.GetBytes(value);
-                CurrentBuffer[i + 0] = newValues[1];
-                CurrentBuffer[i + 1] = newValues[0];
+
+				if (value > VolumeThreshHold && WentNegative)
+				{
+					InPositive++;
+					WentNegative = false;
+				}
+				if (value < -VolumeThreshHold && !!WentNegative == false)
+				{
+					WentNegative = true;
+				}
+				byte[] newValues = BitConverter.GetBytes(value);
+				CurrentBuffer[i + 0] = newValues[0];
+				CurrentBuffer[i + 1] = newValues[1];
 
 			}
-			ProceedData(CurrentBuffer, sample);
+			//ProceedData(CurrentBuffer, sample);
+			int ReturnFrequency = SFT(CurrentBuffer, sample);
+			textBox2.Text = ReturnFrequency.ToString();
+			this.pictureBox1.Invalidate();
+			this.pictureBox2.Invalidate();
+			this.pictureBox3.Invalidate();
+			this.pictureBox4.Invalidate();
 
-           
-            this.pictureBox1.Invalidate();
+			//totalData /= sample;
+			//totalData = 10000.0f / totalData;
+			//	InPositive *= 10.0f; //100ms, duplicate data for speakers
 
-            //totalData /= sample;
-            //totalData = 10000.0f / totalData;
-            //	InPositive *= 10.0f; //100ms, duplicate data for speakers
-
-            Average = 0;
+			Average = 0;
 			int Low = 0;
 
 
-            InPositive *= 10;
+			InPositive *= 10;
 			textBox1.Text = InPositive.ToString();
 			//textBox1.Text = Average.ToString();
 
 
 
-            waveWriter.Write(e.Buffer, 0, e.BytesRecorded);
-            waveWriter.Flush();
+			waveWriter.Write(e.Buffer, 0, e.BytesRecorded);
+			waveWriter.Flush();
 			waveIn.Read(e.Buffer, 0, e.BytesRecorded);
 			count++;
 			if (count == 10)
 			{
 				int help = 0;
 			}
-        }
+		}
 		int count = 0;
-        private void button5_Click(object sender, EventArgs e)
-        {
+		private void button5_Click(object sender, EventArgs e)
+		{
 			if (sourceStream != null)
 			{
 				sourceStream.StopRecording();
@@ -196,13 +304,13 @@ namespace winformsAudio
 			}
 			if (waveWriter != null)
 			{
-	            waveWriter.Dispose();
+				waveWriter.Dispose();
 				sourceStream = null;
 			}
 
 			OpenFile("Violin.wav");
 
-        }
+		}
 		DirectSoundOut output = new DirectSoundOut(200);
 		private void OpenFile(string path)
 		{
@@ -210,13 +318,13 @@ namespace winformsAudio
 			SoundEffect soundEffect = new SoundEffect(wave);
 			BlockAlignReductionStream stream = new BlockAlignReductionStream(soundEffect);
 
-			
+
 			output.Init(stream);
 			output.Play();
 			output.PlaybackStopped += new EventHandler<StoppedEventArgs>(Replay);
 
 		}
-		private void Replay(object sender,StoppedEventArgs e)
+		private void Replay(object sender, StoppedEventArgs e)
 		{
 			wave = new WaveChannel32(new WaveFileReader("Violin.wav"));
 			SoundEffect soundEffect = new SoundEffect(wave);
@@ -226,25 +334,25 @@ namespace winformsAudio
 			output.Play();
 		}
 		private void button3_Click(object sender, EventArgs e)
-        {
-            if (waveOut != null)
-            {
-                waveOut.Stop();
-                waveOut.Dispose();
-                waveOut = null;
-            }
-            if (sourceStream != null)
-            {
-                sourceStream.StopRecording();
-                sourceStream.Dispose();
-                sourceStream = null;
-            }
-        }
+		{
+			if (waveOut != null)
+			{
+				waveOut.Stop();
+				waveOut.Dispose();
+				waveOut = null;
+			}
+			if (sourceStream != null)
+			{
+				sourceStream.StopRecording();
+				sourceStream.Dispose();
+				sourceStream = null;
+			}
+		}
 
-        private void textBox1_TextChanged(object sender, EventArgs e)
-        {
+		private void textBox1_TextChanged(object sender, EventArgs e)
+		{
 
-        }
+		}
 
 		private void pictureBox1_Click(object sender, EventArgs e)
 		{
@@ -259,33 +367,30 @@ namespace winformsAudio
 			Brush brushBlue = new SolidBrush(Color.Blue);
 			int x = 0;
 			int y = 0;
-					float ScaleFactor = 1.0f / 20.0f;
-			if (CurrentBuffer != null)
+			float ScaleFactor = 1.0f / 10.0f;
+			if (FrameWave != null)
 			{
-                Point currentDot;
-                Point previousDot;
+				Point currentDot;
+				Point previousDot;
 				e.Graphics.Clear(Color.White);
-                previousDot = new Point();
-                Int16 value = (Int16)(GetSampleValue(CurrentBuffer, 0) * -1);
-                previousDot.Y = (int)((float)value * ScaleFactor + 100.0f);
-                previousDot.X = 0;
-                for (int i = 1; i < CurrentBuffer.Length - 3; i += 2)
+				previousDot = new Point();
+				Int16 value = FrameWave[0];
+				previousDot.Y = (int)((float)value * ScaleFactor + 100.0f);
+				previousDot.X = 0;
+				for (int i = 1; i < FrameWave.Count; i++)
 				{
 
-					value = (Int16)(GetSampleValue(CurrentBuffer, i));
-                    if (value > 0)
-                        value = value;
-                    value *= -1;
-                    currentDot = new Point();
-                    currentDot.Y = (int)((float)value * ScaleFactor + 100.0f);
-                    currentDot.X = (i/2);
+					value = FrameWave[i];
+					currentDot = new Point();
+					currentDot.Y = (int)((float)value * ScaleFactor + 100.0f);
+					currentDot.X = (i / 2);
 
-                  //  e.Graphics.DrawLine(pen, currentDot, previousDot);
-                    previousDot = currentDot;
+					//  e.Graphics.DrawLine(pen, currentDot, previousDot);
+					previousDot = currentDot;
 					e.Graphics.FillRectangle(brushRed, x + (i / 2), 100.0f, 1, 1);
 					e.Graphics.FillRectangle(brushBlue, x + (i / 2), VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
 					e.Graphics.FillRectangle(brushBlue, x + (i / 2), -VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
-					e.Graphics.FillRectangle(brush, x + (i / 2), value * ScaleFactor + 100.0f, 1, 1);
+					e.Graphics.FillRectangle(brush, x + (i / 2), (float)value * ScaleFactor + 100.0f, 1, 1);
 				}
 			}
 			if (CurrentFloatBuffer != null)
@@ -305,7 +410,7 @@ namespace winformsAudio
 					e.Graphics.FillRectangle(brush, x + (i / 2), value, 1, 1);
 				}
 			}
-			}
+		}
 		Bluetooth NXT = new Bluetooth();
 		private void Form1_KeyDown(object sender, KeyEventArgs e)
 		{
@@ -334,6 +439,76 @@ namespace winformsAudio
 		}
 
 		private void Form1_KeyPress(object sender, KeyPressEventArgs e)
+		{
+
+		}
+
+		private void pictureBox2_Click(object sender, EventArgs e)
+		{
+			
+
+		}
+
+		private void pictureBox2_Paint(object sender, PaintEventArgs e)
+		{
+			Brush brush = new SolidBrush(Color.Black);
+			Brush brushRed = new SolidBrush(Color.Red);
+			Brush brushBlue = new SolidBrush(Color.Blue);
+			int x = 0;
+			int y = 0;
+			float ScaleFactor = 1.0f / 1.0f;
+
+			Point currentDot;
+			Point previousDot;
+			e.Graphics.Clear(Color.White);
+			previousDot = new Point();
+			if (DifferentialsWave != null)
+			{
+				Int16 value = DifferentialsWave[0];
+	
+				for (int i = 0; i < DifferentialsWave.Count; i++)
+				{
+					value = DifferentialsWave[i];
+
+					e.Graphics.FillRectangle(brushRed, x + (i), 100.0f, 1, 1);
+					e.Graphics.FillRectangle(brushBlue, x + (i), VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
+					e.Graphics.FillRectangle(brushBlue, x + (i), -VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
+					e.Graphics.FillRectangle(brushRed, x + (i), value * ScaleFactor + 100.0f, 1, 1);
+
+				}
+			}
+		}
+
+		private void pictureBox3_Paint(object sender, PaintEventArgs e)
+		{
+			Brush brush = new SolidBrush(Color.Black);
+			Brush brushRed = new SolidBrush(Color.Red);
+			Brush brushBlue = new SolidBrush(Color.Blue);
+			int x = 0;
+			int y = 0;
+			float ScaleFactor = 1.0f / 10.0f;
+
+			Point currentDot;
+			Point previousDot;
+			e.Graphics.Clear(Color.White);
+			previousDot = new Point();
+			if (ExtremumsWave != null)
+			{
+	
+				foreach (var i in ExtremumsWave)
+				{
+					Int16 value = i.Value;
+
+					e.Graphics.FillRectangle(brushRed, x + (i.Key), 100.0f, 1, 1);
+					e.Graphics.FillRectangle(brushBlue, x + (i.Key), VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
+					e.Graphics.FillRectangle(brushBlue, x + (i.Key), -VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
+					e.Graphics.FillRectangle(brushRed, x + (i.Key), value * ScaleFactor + 100.0f, 1, 1);
+
+				}
+			}
+		}
+
+		private void pictureBox4_Paint(object sender, PaintEventArgs e)
 		{
 
 		}
