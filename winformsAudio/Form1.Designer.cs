@@ -45,6 +45,7 @@
 			this.textBox2 = new System.Windows.Forms.TextBox();
 			this.pictureBox4 = new System.Windows.Forms.PictureBox();
 			this.label3 = new System.Windows.Forms.Label();
+			this.button6 = new System.Windows.Forms.Button();
 			this.panel1.SuspendLayout();
 			this.panel2.SuspendLayout();
 			((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
@@ -150,10 +151,10 @@
 			// 
 			// pictureBox1
 			// 
-			this.pictureBox1.Location = new System.Drawing.Point(10, 202);
+			this.pictureBox1.Location = new System.Drawing.Point(10, 230);
 			this.pictureBox1.Margin = new System.Windows.Forms.Padding(2);
 			this.pictureBox1.Name = "pictureBox1";
-			this.pictureBox1.Size = new System.Drawing.Size(700, 195);
+			this.pictureBox1.Size = new System.Drawing.Size(700, 167);
 			this.pictureBox1.TabIndex = 2;
 			this.pictureBox1.TabStop = false;
 			this.pictureBox1.Click += new System.EventHandler(this.pictureBox1_Click);
@@ -223,11 +224,23 @@
 			this.label3.TabIndex = 8;
 			this.label3.Text = "Extracted Wave";
 			// 
+			// button6
+			// 
+			this.button6.Location = new System.Drawing.Point(11, 207);
+			this.button6.Margin = new System.Windows.Forms.Padding(2);
+			this.button6.Name = "button6";
+			this.button6.Size = new System.Drawing.Size(229, 19);
+			this.button6.TabIndex = 5;
+			this.button6.Text = "Next";
+			this.button6.UseVisualStyleBackColor = true;
+			this.button6.Click += new System.EventHandler(this.button6_Click);
+			// 
 			// Form1
 			// 
 			this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
 			this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
 			this.ClientSize = new System.Drawing.Size(881, 587);
+			this.Controls.Add(this.button6);
 			this.Controls.Add(this.label3);
 			this.Controls.Add(this.pictureBox4);
 			this.Controls.Add(this.textBox2);
@@ -276,6 +289,7 @@
 		private System.Windows.Forms.TextBox textBox2;
 		private System.Windows.Forms.PictureBox pictureBox4;
 		private System.Windows.Forms.Label label3;
+		private System.Windows.Forms.Button button6;
 	}
 }
 

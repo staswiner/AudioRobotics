@@ -79,6 +79,7 @@ namespace winformsAudio
 		public List<Int16> SingleWave = null; // 1 cycle
 		public List<Int16> FrameWave = null; // 100ms
 		public List<Int16> DifferentialsWave = null; // Differentials
+		public List<Int16> FrequencySinus = null;
 		public Dictionary<int,Int16> ExtremumsWave = null; // Extremums
 		int VolumeThreshHold = 4000;
 		private Int16 GetSampleValue(byte[] buffer, int index)
@@ -89,36 +90,80 @@ namespace winformsAudio
 			Int16 value = BitConverter.ToInt16(sound, 0);
 			return value;
 		}
-		private int SFT(byte[] Data, int Count) // stas fürer transform
+		private List<Int16> ConvertFormatData(byte[] Data, int Count)
 		{
-			int StartTime = DateTime.Now.Millisecond;
-			int MirrorSize = Count / 16;
-			// <value of Amplitude>
 			List<Int16> Amplitudes = new List<Int16>();
-			for (var i = 0; i < Count - 3; i += 2)
+			for (var i = 0; i < Count - 5; i += 4)
 			{
 				Int16 value1 = GetSampleValue(Data, i);
+				Int16 value2 = GetSampleValue(Data, i+2);
+				Amplitudes.Add(value2);
 				Amplitudes.Add(value1);
 			}
+			return Amplitudes;
+		}
+		private int SFT(List<Int16> Amplitudes) // stas fürer transform
+		{
+			int StartTime = DateTime.Now.Millisecond;
+			const int FullCaptureFraction = 256;
+			int MirrorSize = ((Amplitudes.Count) / FullCaptureFraction) * 10;
+			
+			// Finds First Positive faggot after reaching 0
+			int StartIndex = 0;
+			for (var i = 3; i < Amplitudes.Count; i++)
+			{
+				if (Amplitudes[i-3] <= 0 && Amplitudes[i] > 0)
+				{
+					StartIndex = i;
+					break;
+				}
+			}
+			if (StartIndex > MirrorSize)
+				return 0;
+
 			FrameWave = new List<short>(Amplitudes);
 			// <Key: Frequency, Value : Amplitude>
-			Dictionary<int,int> FrequencyContainer = new Dictionary<int, int>(); 
-			for (int Frequency = 440; Frequency > 260; Frequency -= 10)
+			Dictionary<int,int> FrequencyContainer = new Dictionary<int, int>();
+			//int Frequency = FrequencySinusValue;
+
+			for(int Frequency = 440; Frequency > 260; Frequency-=10)
+			//int Frequency = 440;
 			{
 				FrequencyContainer[Frequency] = 0;
 				bool Checked = true;
-				const int AmplituteIncrement = 1;
+				const int AmplituteIncrement = 100;
 				while (Checked)
 				{
-					for (float i = 0; i < ((float)MirrorSize / (float)Frequency); i+=1.0f/(Frequency*2.0f))
+					// *32 = 32 times more steps
+					for (float i = 0; i < ((float)MirrorSize / (float)Frequency) / 10; i+=1.0f/(Frequency*10.0f))
 					{
 						float SinusFunctionValue = 
-							(System.Math.Abs(FrequencyContainer[Frequency] + AmplituteIncrement))
-							* (float)System.Math.Sin((double)(i) * System.Math.PI * Frequency);
-						if (System.Math.Abs(Amplitudes[(int)i*100]) < 
+							(System.Math.Abs(FrequencyContainer[Frequency]))
+							* (float)System.Math.Sin((double)(i));
+
+						if (System.Math.Abs(Amplitudes[(int)(i * (Frequency)) + StartIndex]) < 
 							System.Math.Abs(SinusFunctionValue))
 						{
 							Checked = false;
+
+							Int16[] myArray = new short[MirrorSize + StartIndex];
+							for (int s = 0; s < StartIndex; s++)
+							{
+								myArray[s] = 0;
+							}
+
+
+							for (float s = 0; s < ((float)MirrorSize / (float)Frequency);
+								s += 1.0f / (Frequency * 10.0f))
+							{
+								SinusFunctionValue =
+									(System.Math.Abs(FrequencyContainer[Frequency]))
+									* (float)System.Math.Sin((double)(s));
+
+								myArray[(int)(s * (Frequency / 10.0f)) + StartIndex] =
+									(Int16)SinusFunctionValue;
+							}
+							FrequencySinus = new List<Int16>(myArray);
 							break;
 						}
 
@@ -127,6 +172,13 @@ namespace winformsAudio
 						FrequencyContainer[Frequency] += AmplituteIncrement;
 				}
 			}
+
+
+
+
+			
+
+
 			int max = 0;
 			int ReturnFrequency = 0;
 			foreach(var i in FrequencyContainer)
@@ -140,6 +192,43 @@ namespace winformsAudio
 			int EndTime = DateTime.Now.Millisecond;
 			int TotalTime = EndTime - StartTime;
 			return ReturnFrequency;
+		}
+		private int DistanceBetweenExtremums(List<Int16> Amplitudes)
+		{
+			Int16 MaxVal1 = 0;
+			Int16 MinVal1 = 0;
+			int maxValIndex = 0;
+			int minValIndex = 0;
+			int State = 0;
+			// Goal, find max val
+			for(int i = 0; i < Amplitudes.Count-10; i++)
+			{
+				if (Amplitudes[i] < -200 && State==0)
+				{
+					State = 1;
+				}
+				if (Amplitudes[i] > 200 && State==1)
+				{
+					State = 2; 
+				}
+				if (Amplitudes[i] < -200 && State==2)
+				{
+					break;
+				}
+				if (Amplitudes[i] > MaxVal1)
+				{
+					MaxVal1 = Amplitudes[i];
+					maxValIndex = i;
+				}
+				if (Amplitudes[i] < MinVal1)
+				{
+					MinVal1 = Amplitudes[i];
+					minValIndex = i;
+				}
+			}
+
+			int Frequency = Amplitudes.Count / (System.Math.Abs(maxValIndex - minValIndex) * 2) * 10;
+			return Frequency;
 		}
 		private void ProceedData(byte[] Data, int Count)
 		{
@@ -263,12 +352,13 @@ namespace winformsAudio
 
 			}
 			//ProceedData(CurrentBuffer, sample);
-			int ReturnFrequency = SFT(CurrentBuffer, sample);
+			int ReturnFrequency = SFT(this.ConvertFormatData(CurrentBuffer, sample));
+			//ReturnFrequency = this.DistanceBetweenExtremums(this.ConvertFormatData(CurrentBuffer, sample));
 			textBox2.Text = ReturnFrequency.ToString();
 			this.pictureBox1.Invalidate();
-			this.pictureBox2.Invalidate();
-			this.pictureBox3.Invalidate();
-			this.pictureBox4.Invalidate();
+			//this.pictureBox2.Invalidate();
+			//this.pictureBox3.Invalidate();
+			//this.pictureBox4.Invalidate();
 
 			//totalData /= sample;
 			//totalData = 10000.0f / totalData;
@@ -365,6 +455,7 @@ namespace winformsAudio
 			Brush brush = new SolidBrush(Color.Black);
 			Brush brushRed = new SolidBrush(Color.Red);
 			Brush brushBlue = new SolidBrush(Color.Blue);
+			Brush brushPink = new SolidBrush(Color.DarkMagenta);
 			int x = 0;
 			int y = 0;
 			float ScaleFactor = 1.0f / 10.0f;
@@ -381,33 +472,32 @@ namespace winformsAudio
 				{
 
 					value = FrameWave[i];
-					currentDot = new Point();
-					currentDot.Y = (int)((float)value * ScaleFactor + 100.0f);
-					currentDot.X = (i / 2);
+					int xDelta = i;
 
-					//  e.Graphics.DrawLine(pen, currentDot, previousDot);
-					previousDot = currentDot;
-					e.Graphics.FillRectangle(brushRed, x + (i / 2), 100.0f, 1, 1);
-					e.Graphics.FillRectangle(brushBlue, x + (i / 2), VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
-					e.Graphics.FillRectangle(brushBlue, x + (i / 2), -VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
-					e.Graphics.FillRectangle(brush, x + (i / 2), (float)value * ScaleFactor + 100.0f, 1, 1);
+					e.Graphics.FillRectangle(brushRed, x + xDelta, 100.0f, 1, 1);
+					e.Graphics.FillRectangle(brushBlue, x + xDelta, VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
+					e.Graphics.FillRectangle(brushBlue, x + xDelta, -VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
+					e.Graphics.FillRectangle(brush, x + xDelta, (float)value * ScaleFactor + 100.0f, 1, 1);
 				}
 			}
-			if (CurrentFloatBuffer != null)
+			if (FrequencySinus != null)
 			{
-				e.Graphics.Clear(Color.White);
-				for (int i = 0; i < CurrentFloatBuffer.Length - 3; i += 8)
+				ScaleFactor = 1.0f / 10.0f;
+				Point currentDot;
+				Point previousDot;
+				previousDot = new Point();
+				float value = FrequencySinus[0];
+				previousDot.Y = (int)((float)value * ScaleFactor + 100.0f);
+				previousDot.X = 0;
+				for (int i = 1; i < FrequencySinus.Count; i++)
 				{
-					byte sound1 = CurrentFloatBuffer[i + 0];
-					byte sound2 = CurrentFloatBuffer[i + 1];
-					byte sound3 = CurrentFloatBuffer[i + 4];
-					byte sound4 = CurrentFloatBuffer[i + 5];
-					byte[] sound = { sound1, sound2, sound3, sound4 };
-					float value = BitConverter.ToSingle(sound, 0);
 
+					value = FrequencySinus[i];
+					int xDelta = i;
 
-					e.Graphics.FillRectangle(brushRed, x + (i / 2), 100.0f, 1, 1);
-					e.Graphics.FillRectangle(brush, x + (i / 2), value, 1, 1);
+					//  e.Graphics.DrawLine(pen, currentDot, previousDot);
+				
+					e.Graphics.FillRectangle(brushPink, x + xDelta, (float)value * ScaleFactor + 100.0f, 2, 2);
 				}
 			}
 		}
@@ -511,6 +601,12 @@ namespace winformsAudio
 		private void pictureBox4_Paint(object sender, PaintEventArgs e)
 		{
 
+		}
+		private int FrequencySinusValue = 440;
+		private void button6_Click(object sender, EventArgs e)
+		{
+			FrequencySinusValue--;
+			pictureBox1.Invalidate();
 		}
 	}
 }
