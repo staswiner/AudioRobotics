@@ -1,4 +1,26 @@
-﻿using System;
+﻿/*
+ *	Algorithm 1 : Line 170
+ *	Algorithm 2 : Line 261
+ *	Algorithm 3 : Line 293
+ *	Bluetooth Protocol : Blueooth.cs 
+ *	NXT orderes based on audio results : Line 455
+ *	Event function uppon receiving audio input : Line 412
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ */
+
+
+
+
+
+
+
+
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -16,12 +38,10 @@ namespace winformsAudio
 		public Form1()
 		{
 			InitializeComponent();
-			//	NXT.Open("COM5");
-
 		}
 		~Form1()
 		{
-			//	NXT.close();
+			NXT.close();
 		}
 
 		private void button1_Click(object sender, EventArgs e)
@@ -76,12 +96,16 @@ namespace winformsAudio
 		List<float> Last10 = new List<float>(10);
 		public byte[] CurrentBuffer = null;
 		public byte[] CurrentFloatBuffer = null;
-		public List<Int16> SingleWave = null; // 1 cycle
-		public List<Int16> FrameWave = null; // 100ms
-		public List<Int16> DifferentialsWave = null; // Differentials
+		public List<float> SingleWave = null; // 1 cycle
+		public List<float> FrameWave = null; // 100ms
+		public List<float> DifferentialsWave = null; // Differentials
 		public List<Int16> FrequencySinus = null;
-		public Dictionary<int,Int16> ExtremumsWave = null; // Extremums
+		public Dictionary<int,float> ExtremumsWave = null; // Extremums
 		int VolumeThreshHold = 4000;
+		void StoreInDrawingBuffer(byte[] Amplitudes, int Count)
+		{
+			FrameWave = ConvertFormatData(Amplitudes, Count);
+		}
 		private Int16 GetSampleValue(byte[] buffer, int index)
 		{
 			byte sound1 = buffer[index + 0];
@@ -90,9 +114,10 @@ namespace winformsAudio
 			Int16 value = BitConverter.ToInt16(sound, 0);
 			return value;
 		}
-		private List<Int16> ConvertFormatData(byte[] Data, int Count)
+		// converts 
+		private List<float> ConvertFormatData(byte[] Data, int Count)
 		{
-			List<Int16> Amplitudes = new List<Int16>();
+			List<float> Amplitudes = new List<float>();
 			for (var i = 0; i < Count - 5; i += 4)
 			{
 				Int16 value1 = GetSampleValue(Data, i);
@@ -100,88 +125,107 @@ namespace winformsAudio
 				Amplitudes.Add(value2);
 				Amplitudes.Add(value1);
 			}
+			/*
+			 * Custom Operations
+			 */
+			float max = 0;
+			for(int i = 0; i < Amplitudes.Count; i++)
+			{
+				if (max < Amplitudes[i])
+				{
+					max = Amplitudes[i];
+				}
+			}
+			//if (max < 200)
+			//	return null;
+			for (int i = 0; i < Amplitudes.Count; i++)
+			{
+				Amplitudes[i] /= max;
+				Amplitudes[i] *= 200.0f; 
+			}
+
 			return Amplitudes;
 		}
-		private int SFT(List<Int16> Amplitudes) // stas fürer transform
+		private void Normalize(ref List<float> Amplitudes, float Roof)
 		{
-			int StartTime = DateTime.Now.Millisecond;
-			const int FullCaptureFraction = 256;
-			int MirrorSize = ((Amplitudes.Count) / FullCaptureFraction) * 10;
-			
-			// Finds First Positive faggot after reaching 0
-			int StartIndex = 0;
-			for (var i = 3; i < Amplitudes.Count; i++)
+			float Max;
+			// Finds Max
 			{
-				if (Amplitudes[i-3] <= 0 && Amplitudes[i] > 0)
+				float max = 0;
+				for (int i = 0; i < Amplitudes.Count; i++)
 				{
-					StartIndex = i;
+					if (Amplitudes[i] > max)
+					{
+						max = Amplitudes[i];
+					}
+				}
+				Max = max;
+			}
+			// Normalizes
+			for (int i = 0; i < Amplitudes.Count; i++)
+			{
+				Amplitudes[i] = Amplitudes[i] * Roof / Max;
+			}
+		}
+		private int Algorithm1_SFT(List<float> Amplitudes) // stas fürer transform
+		{
+			if (Amplitudes == null)
+				return 0;
+			const int FrameSamples = 4410;
+			int StartTime = DateTime.Now.Millisecond;
+			const int FullCaptureFraction = 64;
+			int MirrorSize = ((Amplitudes.Count) / FullCaptureFraction) * 10;
+
+			// Finds First Positive amplitudes after reaching 0
+			int StartIndex = 0;
+			for (var i = 10; i < Amplitudes.Count; i++)
+			{
+				if (Amplitudes[i - 10] <= 0 && Amplitudes[i] > 0)
+				{
+					StartIndex = i - 10;
 					break;
 				}
 			}
 			if (StartIndex > MirrorSize)
 				return 0;
 
-			FrameWave = new List<short>(Amplitudes);
+			FrameWave = new List<float>(Amplitudes);
 			// <Key: Frequency, Value : Amplitude>
-			Dictionary<int,int> FrequencyContainer = new Dictionary<int, int>();
-			//int Frequency = FrequencySinusValue;
+			Dictionary<int, int> FrequencyContainer = new Dictionary<int, int>();
+			Dictionary<int, int> FrequencyMatches = new Dictionary<int, int>();
 
-			for(int Frequency = 440; Frequency > 260; Frequency-=10)
-			//int Frequency = 440;
+			for (int Frequency = 500; Frequency > 120; Frequency -= 5)
 			{
-				FrequencyContainer[Frequency] = 0;
-				bool Checked = true;
-				const int AmplituteIncrement = 100;
-				while (Checked)
+				int Match = 0;
+				for (float i = 0; i < MirrorSize; i += 1.0f)
 				{
-					// *32 = 32 times more steps
-					for (float i = 0; i < ((float)MirrorSize / (float)Frequency) / 10; i+=1.0f/(Frequency*10.0f))
+					float SinusFunctionValue = 1 *
+						(float)System.Math.Sin((i * Frequency / (double)FrameSamples / System.Math.PI));
+
+					if (Amplitudes[(int)(i) + StartIndex] / SinusFunctionValue > 1.0f)
 					{
-						float SinusFunctionValue = 
-							(System.Math.Abs(FrequencyContainer[Frequency]))
-							* (float)System.Math.Sin((double)(i));
 
-						if (System.Math.Abs(Amplitudes[(int)(i * (Frequency)) + StartIndex]) < 
-							System.Math.Abs(SinusFunctionValue))
-						{
-							Checked = false;
-
-							Int16[] myArray = new short[MirrorSize + StartIndex];
-							for (int s = 0; s < StartIndex; s++)
-							{
-								myArray[s] = 0;
-							}
-
-
-							for (float s = 0; s < ((float)MirrorSize / (float)Frequency);
-								s += 1.0f / (Frequency * 10.0f))
-							{
-								SinusFunctionValue =
-									(System.Math.Abs(FrequencyContainer[Frequency]))
-									* (float)System.Math.Sin((double)(s));
-
-								myArray[(int)(s * (Frequency / 10.0f)) + StartIndex] =
-									(Int16)SinusFunctionValue;
-							}
-							FrequencySinus = new List<Int16>(myArray);
-							break;
-						}
-
+						Match++;
 					}
-					if (Checked == true)
-						FrequencyContainer[Frequency] += AmplituteIncrement;
+
+
 				}
+				FrequencyMatches[Frequency] = Match;
 			}
-
-
-
-
-			
+		
 
 
 			int max = 0;
 			int ReturnFrequency = 0;
-			foreach(var i in FrequencyContainer)
+			//foreach(var i in FrequencyContainer)
+			//{
+			//	if (i.Value > max)
+			//	{
+			//		max = i.Value;
+			//		ReturnFrequency = i.Key;
+			//	}
+			//}
+			foreach (var i in FrequencyMatches)
 			{
 				if (i.Value > max)
 				{
@@ -189,70 +233,130 @@ namespace winformsAudio
 					ReturnFrequency = i.Key;
 				}
 			}
+
+			Int16[] myArray = new short[MirrorSize + StartIndex];
+			for (int s = 0; s < StartIndex; s++)
+			{
+				myArray[s] = 0;
+			}
+
+
+			for (float s = 0; s < MirrorSize; s += 1.0f)
+			{
+				float SinusFunctionValue =
+					//FrequencyContainer[ReturnFrequency]
+					100
+					* (float)System.Math.Sin((s * ReturnFrequency / (double)FrameSamples / System.Math.PI));
+
+				myArray[(int)(s) + StartIndex] = (Int16)SinusFunctionValue;
+			}
+			FrequencySinus = new List<Int16>(myArray);
+
+
+
 			int EndTime = DateTime.Now.Millisecond;
 			int TotalTime = EndTime - StartTime;
 			return ReturnFrequency;
 		}
-		private int DistanceBetweenExtremums(List<Int16> Amplitudes)
+		private float Algorithm2_DistanceBetweenExtremums(List<float> Amplitudes)
 		{
 			Int16 MaxVal1 = 0;
 			Int16 MinVal1 = 0;
 			int maxValIndex = 0;
 			int minValIndex = 0;
 			int State = 0;
-			// Goal, find max val
-			for(int i = 0; i < Amplitudes.Count-10; i++)
+			float Threshold = 160.0f;
+			// Normalize Data first
+			Normalize(ref Amplitudes, 200.0f);
+			// Finds First Value above Threshold and under -Threshold
+			for(int i = 0; i < Amplitudes.Count; i++)
 			{
-				if (Amplitudes[i] < -200 && State==0)
+				if (Amplitudes[i] > Threshold)
 				{
-					State = 1;
-				}
-				if (Amplitudes[i] > 200 && State==1)
-				{
-					State = 2; 
-				}
-				if (Amplitudes[i] < -200 && State==2)
-				{
+					maxValIndex = i;
 					break;
 				}
-				if (Amplitudes[i] > MaxVal1)
-				{
-					MaxVal1 = Amplitudes[i];
-					maxValIndex = i;
-				}
-				if (Amplitudes[i] < MinVal1)
-				{
-					MinVal1 = Amplitudes[i];
-					minValIndex = i;
-				}
 			}
-
-			int Frequency = Amplitudes.Count / (System.Math.Abs(maxValIndex - minValIndex) * 2) * 10;
-			return Frequency;
-		}
-		private void ProceedData(byte[] Data, int Count)
-		{
-			// <value of Amplitude>
-			List<Int16> Amplitudes = new List<Int16>();
-			// <value of differential>
-			List<Int16> Differentials = new List<Int16>();
-			// <index, Extremum (amplitute)>
-			var Extremums = new Dictionary<int, Int16>();
-			// Sum
-			int IntegralSum = 0;
-
-			for (var i = 0; i < Count - 200; i += 2)
+			for (int i = maxValIndex; i < Amplitudes.Count; i++)
 			{
-				Int16 value1 = GetSampleValue(Data, i);
-				Int16 value2 = GetSampleValue(Data, i + 2);
-				Int16 value3Far = GetSampleValue(Data, i + 20);
-				Differentials.Add((short)(value3Far - value1));
-				Amplitudes.Add(value1);
-				IntegralSum += value1;
+				if (Amplitudes[i] < -Threshold)
+				{
+					minValIndex = i;
+					break;
+				}
 			}
-			textBox2.Text = IntegralSum.ToString();
-			FrameWave = new List<short>(Amplitudes);
-			for (var i = 0; i < Count/2 - 200; i++)
+
+			float ReturnFrequency = (float)Amplitudes.Count / (float)((minValIndex - maxValIndex) * 2);
+			return ReturnFrequency;
+		}
+		private float Algorithm3_ZeroIntersection(List<float> Amplitudes)
+		{
+			int IntersectionCount = 0;
+			int FirstEncouter = 0, LastEncouter = 0;
+			// Amount of time frames ignored between each test to remove faulty data
+			const int TestDistance = 20;
+
+			string CurrentSign = "Negative";
+
+			for(int i = 0; i < Amplitudes.Count; i+=TestDistance)
+			{
+				if (CurrentSign == "Positive")
+				{
+					if (Amplitudes[i] < 0)
+					{
+						IntersectionCount++;
+						CurrentSign = "Negative";
+						if (FirstEncouter == 0)
+							FirstEncouter = i;
+						LastEncouter = i;
+					}
+				}
+				if (CurrentSign == "Negative")
+				{
+					if (Amplitudes[i] > 0)
+					{
+						IntersectionCount++;
+						CurrentSign = "Positive";
+						if (FirstEncouter == 0)
+							FirstEncouter = i;
+						LastEncouter = i;
+					}
+				}
+			}
+			// Remainder approximation
+			float NumFullWaves = IntersectionCount / 2;
+			int Remainder = (Amplitudes.Count - (LastEncouter - FirstEncouter));
+			float ReturnFrequency = 0;
+			if (Remainder > (Amplitudes.Count / NumFullWaves)/2)
+			{
+				ReturnFrequency = NumFullWaves + (float)Remainder / (float)(Amplitudes.Count) * NumFullWaves;
+			}
+			else
+			{
+				ReturnFrequency = NumFullWaves - (float)Remainder / (float)(Amplitudes.Count) * NumFullWaves;
+			}
+			return ReturnFrequency;
+		}
+		private int Algorithm4_MatchMinimal(List<float> Amplitudes)
+		{
+
+			return 0;
+		}
+		private void ProceedData(List<float> Amplitudes)
+		{
+			// <value of differential>
+			List<float> Differentials = new List<float>();
+			// <index, Extremum (amplitute)>
+			var Extremums = new Dictionary<int, float>();
+
+			
+			for (var i = 0; i < Amplitudes.Count - 200; i += 2)
+			{
+				Differentials.Add((short)(Amplitudes[i+5] - Amplitudes[i]));
+				Amplitudes.Add(Amplitudes[i]);
+			}
+			FrameWave = new List<float>(Amplitudes);
+			for (var i = 0; i < Amplitudes.Count / 2 - 200; i++)
 			{
 				if (Differentials[i] * Differentials[i + 1] < 0) // changed from neg to pos or pos to neg
 				{
@@ -262,9 +366,9 @@ namespace winformsAudio
 			//
 			int MatchIndex = 0;
 			int MaxMatch = 1;
-			Dictionary<int, Int16> CurrentContainer = new Dictionary<int, Int16>();
-			Dictionary<int, Int16> LastContainer = new Dictionary<int, Int16>();
-		
+			Dictionary<int, float> CurrentContainer = new Dictionary<int, float>();
+			Dictionary<int, float> LastContainer = new Dictionary<int, float>();
+
 			for (int n = 0; Extremums.Count > 1; n++)
 			{
 				CurrentContainer.Clear();
@@ -290,86 +394,88 @@ namespace winformsAudio
 						MatchIndex = 0;
 					}
 				}
-				LastContainer = new Dictionary<int, short>(Extremums);
-				Extremums = new Dictionary<int, short>(CurrentContainer);
+				LastContainer = new Dictionary<int, float>(Extremums);
+				Extremums = new Dictionary<int, float>(CurrentContainer);
 			}
 			/**/
 
-			SingleWave = new List<short>();
-			for(int i = 0; i < LastContainer.ElementAt(LastContainer.Count - 1).Key; i++)
+			SingleWave = new List<float>();
+			for (int i = 0; i < LastContainer.ElementAt(LastContainer.Count - 1).Key; i++)
 			{
 				SingleWave.Add(Amplitudes[i]);
 			}
 
-			DifferentialsWave = new List<short>(Differentials);
-			ExtremumsWave = new Dictionary<int, short>(Extremums);
-		
+			DifferentialsWave = new List<float>(Differentials);
+			ExtremumsWave = new Dictionary<int, float>(Extremums);
+
 		}
 		private void sourceStream_DataAvailable(object sender, NAudio.Wave.WaveInEventArgs e)
 		{
 			int sample = e.BytesRecorded;
 			/* analyze data */
-			float totalData = 0;
-			float max = 0;
-			float InPositive = 0;
-			bool WentNegative = true;
 			bool isOdd = true;
 			CurrentBuffer = new byte[sample];
 			// for drawing
-			for (int i = 0; i < sample - 3; i += 2)
-			{
-				Int16 value = GetSampleValue(e.Buffer, i);
-				if (value > max) max = value;
-			}
-			VolumeThreshHold = (int)(max * 0.1f);
 			VolumeThreshHold = 200;
+			/*
+			 * Unfiltered sound comes in form of 2 opposing wave functions, probably has to do with stereo
+			 * i Treat them all as a single sound, and therefor every odd number of result shall be negated.
+			 */
 			for (int i = 0; i < sample - 3; i += 2)
 			{
 				Int16 value = GetSampleValue(e.Buffer, i);
-				if (isOdd)
-				{
+				if (isOdd) {
 					value *= -1;
 					isOdd = false;
 				}
-				else
-				{
-					isOdd = true;
-				}
+				else isOdd = true;
 
 
-				if (value > VolumeThreshHold && WentNegative)
-				{
-					InPositive++;
-					WentNegative = false;
-				}
-				if (value < -VolumeThreshHold && !!WentNegative == false)
-				{
-					WentNegative = true;
-				}
 				byte[] newValues = BitConverter.GetBytes(value);
 				CurrentBuffer[i + 0] = newValues[0];
 				CurrentBuffer[i + 1] = newValues[1];
 
 			}
+			StoreInDrawingBuffer(CurrentBuffer, sample);
 			//ProceedData(CurrentBuffer, sample);
-			int ReturnFrequency = SFT(this.ConvertFormatData(CurrentBuffer, sample));
-			//ReturnFrequency = this.DistanceBetweenExtremums(this.ConvertFormatData(CurrentBuffer, sample));
-			textBox2.Text = ReturnFrequency.ToString();
+			float ReturnFrequency = 0;
+			ReturnFrequency = Algorithm1_SFT
+				(this.ConvertFormatData(CurrentBuffer, sample));
+			//ReturnFrequency = Algorithm2_DistanceBetweenExtremums
+			//	(this.ConvertFormatData(CurrentBuffer, sample));
+			//ReturnFrequency = Algorithm3_ZeroIntersection
+			//	(this.ConvertFormatData(CurrentBuffer, sample));
+			//ReturnFrequency = Algorithm4_MatchMinimal
+			//	(this.ConvertFormatData(CurrentBuffer, sample));
+
+
+			//int ReturnFrequency = 0;
+			//this.ProceedData(this.ConvertFormatData(CurrentBuffer, sample));
+
+			if (ReturnFrequency != 0)
+			{
+				textBox2.Text = ReturnFrequency.ToString();
+				int DesiredFrequency = 330;
+				if (ReturnFrequency == DesiredFrequency)
+				{
+					NXT.SetMotor(0, 0, Bluetooth.Motor.eState.On);
+				}
+				else
+				{
+					NXT.SetMotor(0, (DesiredFrequency - (int)ReturnFrequency), Bluetooth.Motor.eState.On);
+				}
+			}
+
+
 			this.pictureBox1.Invalidate();
-			//this.pictureBox2.Invalidate();
-			//this.pictureBox3.Invalidate();
+			this.pictureBox2.Invalidate();
+			this.pictureBox3.Invalidate();
 			//this.pictureBox4.Invalidate();
 
-			//totalData /= sample;
-			//totalData = 10000.0f / totalData;
-			//	InPositive *= 10.0f; //100ms, duplicate data for speakers
-
-			Average = 0;
-			int Low = 0;
 
 
-			InPositive *= 10;
-			textBox1.Text = InPositive.ToString();
+			ReturnFrequency *= 10;
+			textBox1.Text = ReturnFrequency.ToString();
 			//textBox1.Text = Average.ToString();
 
 
@@ -378,10 +484,6 @@ namespace winformsAudio
 			waveWriter.Flush();
 			waveIn.Read(e.Buffer, 0, e.BytesRecorded);
 			count++;
-			if (count == 10)
-			{
-				int help = 0;
-			}
 		}
 		int count = 0;
 		private void button5_Click(object sender, EventArgs e)
@@ -465,13 +567,13 @@ namespace winformsAudio
 				Point previousDot;
 				e.Graphics.Clear(Color.White);
 				previousDot = new Point();
-				Int16 value = FrameWave[0];
+				Int16 value = (Int16)FrameWave[0];
 				previousDot.Y = (int)((float)value * ScaleFactor + 100.0f);
 				previousDot.X = 0;
 				for (int i = 1; i < FrameWave.Count; i++)
 				{
 
-					value = FrameWave[i];
+					value = (Int16)FrameWave[i];
 					int xDelta = i;
 
 					e.Graphics.FillRectangle(brushRed, x + xDelta, 100.0f, 1, 1);
@@ -505,13 +607,20 @@ namespace winformsAudio
 		private void Form1_KeyDown(object sender, KeyEventArgs e)
 		{
 			var key = e.KeyCode;
-			if (key == Keys.Right)
+			if (key == Keys.R)
 			{
 				NXT.SetMotor(0, 100, Bluetooth.Motor.eState.On);
+				NXT.SetMotor(1, 100, Bluetooth.Motor.eState.On);
+				NXT.SetMotor(2, 100, Bluetooth.Motor.eState.On);
+				textBox1.Text = "R";
 			}
-			if (key == Keys.Left)
+			if (key == Keys.L)
 			{
 				NXT.SetMotor(0, -100, Bluetooth.Motor.eState.On);
+				NXT.SetMotor(1, -100, Bluetooth.Motor.eState.On);
+				NXT.SetMotor(2, -100, Bluetooth.Motor.eState.On);
+				textBox1.Text = "L";
+
 			}
 			if (key == Keys.Space)
 			{
@@ -554,7 +663,7 @@ namespace winformsAudio
 			previousDot = new Point();
 			if (DifferentialsWave != null)
 			{
-				Int16 value = DifferentialsWave[0];
+				float value = DifferentialsWave[0];
 	
 				for (int i = 0; i < DifferentialsWave.Count; i++)
 				{
@@ -587,7 +696,7 @@ namespace winformsAudio
 	
 				foreach (var i in ExtremumsWave)
 				{
-					Int16 value = i.Value;
+					float value = i.Value;
 
 					e.Graphics.FillRectangle(brushRed, x + (i.Key), 100.0f, 1, 1);
 					e.Graphics.FillRectangle(brushBlue, x + (i.Key), VolumeThreshHold * ScaleFactor + 100.0f, 1, 1);
@@ -605,8 +714,14 @@ namespace winformsAudio
 		private int FrequencySinusValue = 440;
 		private void button6_Click(object sender, EventArgs e)
 		{
-			FrequencySinusValue--;
+			FrequencySinusValue-=10;
 			pictureBox1.Invalidate();
+		}
+
+		private void button3_Click_1(object sender, EventArgs e)
+		{
+			string Port = textBox3.Text;
+			NXT.Open(Port);
 		}
 	}
 }
